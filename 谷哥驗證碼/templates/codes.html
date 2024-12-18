@@ -1,0 +1,266 @@
+<head></head>
+    <title>Google Authenticator Codes</title>
+    <style>
+        .copy-btn {
+            margin-left: 10px;
+            cursor: pointer;
+            padding: 2px 8px;
+        }
+        .blue-text {
+            color: blue;
+        }
+        .red-text {
+            color: red;
+        }
+        .google-logo {
+            vertical-align: middle;
+            height: 65px;
+            margin-right: 15px;
+        }
+        /* 恐龍遊戲的樣式 */
+        .dino-game {
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+        
+        .dino-game h2 {
+            margin-bottom: 10px;
+        }
+        
+        #dino-canvas {
+            border: 1px solid #000;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>
+        <img src="https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png" 
+             alt="Google Logo" 
+             class="google-logo">
+        驗證碼
+    </h1>
+    {% for key, code in codes.items() %}
+        <p>
+            {{ key }}: <span id="code-{{loop.index}}" class="blue-text">{{ code }}</span>
+            <button class="copy-btn" onclick="copyCode({{ loop.index }})">複製</button>
+        </p>
+    {% endfor %}
+
+    <p>剩餘時間: <span id="countdown" class="blue-text">30</span> 秒</p>
+
+    <div class="dino-game">
+        <h2>恐龍遊戲</h2>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+            <span>最高分數: <span id="highScore">0</span></span>
+        </div>
+        <canvas id="dino-canvas" width="600" height="150"></canvas>
+    </div>
+
+    <script>
+        function updateCountdown() {
+            const countdownElement = document.getElementById('countdown');
+            const currentSeconds = new Date().getSeconds();
+            let timeLeft = 30 - (currentSeconds % 30);
+            
+            const updateColor = (seconds) => {
+                const colorClass = seconds <= 10 ? 'red-text' : 'blue-text';
+                countdownElement.className = colorClass;
+                
+                const codeElements = document.querySelectorAll('[id^="code-"]');
+                codeElements.forEach(element => {
+                    element.className = colorClass;
+                });
+            };
+            
+            updateColor(timeLeft);
+            
+            const countdownTimer = setInterval(() => {
+                countdownElement.textContent = timeLeft;
+                updateColor(timeLeft);
+                
+                if (timeLeft <= 0) {
+                    clearInterval(countdownTimer);
+                    location.reload();
+                }
+                timeLeft--;
+            }, 1000);
+        }
+
+        function copyCode(index) {
+            const codeElement = document.getElementById('code-' + index);
+            const text = codeElement.textContent;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                alert('驗證碼已複製！');
+            }).catch(err => {
+                console.error('複製失敗:', err);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', updateCountdown);
+
+        // 恐龍遊戲程式碼
+        const canvas = document.getElementById('dino-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let highScore = localStorage.getItem('dinoHighScore') || 0;
+        document.getElementById('highScore').textContent = highScore;
+        
+        const dino = {
+            x: 50,
+            y: 100,
+            width: 40,
+            height: 40,
+            jumping: false,
+            velocity: 0
+        };
+        
+        const obstacles = [];
+        let gameLoop;
+        let score = 0;
+        
+        function drawDino() {
+            ctx.fillStyle = '#333';
+            ctx.save();
+            ctx.translate(dino.x, dino.y);
+        
+            // 繪製恐龍身體
+            ctx.beginPath();
+            ctx.moveTo(0, 40);  // 身體底部
+            ctx.lineTo(0, 20);  // 身體左側
+            ctx.lineTo(5, 15);  // 脖子開始
+            ctx.lineTo(10, 10); // 頭部底部
+            ctx.lineTo(25, 10); // 頭部頂部
+            ctx.lineTo(30, 15); // 頭部後方
+            ctx.lineTo(35, 20); // 背部
+            ctx.lineTo(40, 40); // 身體右側
+            ctx.closePath();
+            ctx.fill();
+        
+            // 繪製腿部
+            ctx.fillRect(5, 40, 8, 15);  // 左腿
+            ctx.fillRect(25, 40, 8, 15); // 右腿
+        
+            // 繪製眼睛
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(20, 15, 2, 0, Math.PI * 2);
+            ctx.fill();
+        
+            ctx.restore();
+        }
+        
+        function createObstacle() {
+            obstacles.push({
+                x: canvas.width,
+                y: 100,
+                width: 20,
+                height: 40
+            });
+        }
+        
+        function drawObstacles() {
+            ctx.fillStyle = '#666';
+            obstacles.forEach(obstacle => {
+                ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+            });
+        }
+        
+        function updateGame() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 地面
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 140, canvas.width, 1);
+            
+            // 在畫布上顯示當前分數
+            ctx.fillStyle = '#000';
+            ctx.font = '20px Arial';
+            ctx.fillText('目前分數: ' + score, 450, 30);
+            
+            // 更新恐龍位置
+            if (dino.jumping) {
+                dino.velocity += 0.8;
+                dino.y += dino.velocity;
+                
+                if (dino.y >= 100) {
+                    dino.y = 100;
+                    dino.jumping = false;
+                    dino.velocity = 0;
+                }
+            }
+            
+            // 更新障礙物
+            obstacles.forEach((obstacle, index) => {
+                obstacle.x -= 5;
+                if (obstacle.x + obstacle.width < 0) {
+                    obstacles.splice(index, 1);
+                    score++;
+                }
+            });
+            
+            // 碰撞檢測
+            obstacles.forEach(obstacle => {
+                if (dino.x < obstacle.x + obstacle.width &&
+                    dino.x + dino.width > obstacle.x &&
+                    dino.y < obstacle.y + obstacle.height &&
+                    dino.y + dino.height > obstacle.y) {
+                    gameOver();
+                }
+            });
+            
+            // 檢查是否創造新紀錄
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('dinoHighScore', highScore);
+                document.getElementById('highScore').textContent = highScore;
+            }
+            
+            drawDino();
+            drawObstacles();
+        }
+        
+        function startGame() {
+            if (!gameLoop) {
+                gameLoop = setInterval(() => {
+                    updateGame();
+                    if (Math.random() < 0.02) createObstacle();
+                }, 1000 / 60);
+            }
+        }
+        
+        function gameOver() {
+            clearInterval(gameLoop);
+            gameLoop = null;
+            
+            ctx.fillStyle = '#000';
+            ctx.font = '30px Arial';
+            ctx.fillText('遊戲結束！按空白鍵重新開始', 150, 70);
+            
+            if (score >= highScore) {
+                ctx.font = '20px Arial';
+                ctx.fillText('恭喜創造新紀錄！', 230, 100);
+            }
+        }
+        
+        // 遊戲控制
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                if (!gameLoop) {
+                    score = 0;
+                    obstacles.length = 0;
+                    dino.y = 100;
+                    startGame();
+                } else if (!dino.jumping) {
+                    dino.jumping = true;
+                    dino.velocity = -12;
+                }
+            }
+        });
+
+        // 初始化遊戲
+        startGame();
+    </script>
+</body>
