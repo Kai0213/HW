@@ -106,7 +106,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 # 4. 啟動區
 # ==========================================
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+def start_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    print(f"🚀 Health check server listening on port {port}")
+    server.serve_forever()
+
 if __name__ == '__main__':
+    # 啟動一個簡單的 Web Server 來騙過 Render 的健康檢查
+    # 因為 Render Web Service 免費版必須要偵測到有 Port 在 Listen 才會判定部署成功
+    threading.Thread(target=start_health_check_server, daemon=True).start()
+
     app = ApplicationBuilder().token(TG_TOKEN).build()
     
     # 註冊選單對應的指令
