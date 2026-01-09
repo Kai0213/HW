@@ -2,24 +2,38 @@ import asyncio
 from telegram import Update, constants
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
 from google import genai
-
-import os
-from dotenv import load_dotenv
+from google.genai import types
 
 # ==========================================
-# 1. 設定區 (從環境變數讀取)
 # ==========================================
-load_dotenv() # 載入 .env 檔案
-
-TG_TOKEN = os.getenv('TG_TOKEN')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-
-if not TG_TOKEN or not GEMINI_API_KEY:
-    raise ValueError("請確認 .env 檔案中已設定 TG_TOKEN 和 GEMINI_API_KEY")
+# 1. 設定區 (直接填入你的金鑰)
+# ==========================================
+TG_TOKEN = '8535513130:AAGeA8UiuvX_BYKMsDUCcUzHz8I9XVTmFjI'
+GEMINI_API_KEY = 'AIzaSyAlQJrbBQO4GyxUawQPvKC6N721jhsSuVU'
 
 # 初始化 Gemini 2.5 客戶端
 client = genai.Client(api_key=GEMINI_API_KEY, http_options={'api_version': 'v1'})
 MODEL_ID = 'gemini-2.5-flash'
+
+# 安全設定：全部設為 BLOCK_NONE
+safety_settings = [
+    types.SafetySetting(
+        category='HARM_CATEGORY_HATE_SPEECH',
+        threshold='BLOCK_NONE'
+    ),
+    types.SafetySetting(
+        category='HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold='BLOCK_NONE'
+    ),
+    types.SafetySetting(
+        category='HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        threshold='BLOCK_NONE'
+    ),
+    types.SafetySetting(
+        category='HARM_CATEGORY_HARASSMENT',
+        threshold='BLOCK_NONE'
+    )
+]
 
 # 對話記憶儲存
 user_sessions = {}
@@ -71,7 +85,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
         response = client.models.generate_content(
             model=MODEL_ID,
-            contents=[prompt, {'mime_type': 'image/jpeg', 'data': bytes(image_data)}]
+            contents=[prompt, {'mime_type': 'image/jpeg', 'data': bytes(image_data)}],
+            config=types.GenerateContentConfig(safety_settings=safety_settings)
         )
         await update.message.reply_text(f"📸 *分析結果*：\n\n{response.text}", parse_mode=constants.ParseMode.MARKDOWN)
     except Exception as e:
@@ -84,7 +99,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         voice_data = await voice_file.download_as_bytearray()
         response = client.models.generate_content(
             model=MODEL_ID,
-            contents=["聽這段語音並回覆", {'mime_type': 'audio/ogg', 'data': bytes(voice_data)}]
+            contents=["聽這段語音並回覆", {'mime_type': 'audio/ogg', 'data': bytes(voice_data)}],
+            config=types.GenerateContentConfig(safety_settings=safety_settings)
         )
         await update.message.reply_text(f"🎧 *語音辨識回覆*：\n\n{response.text}", parse_mode=constants.ParseMode.MARKDOWN)
     except Exception as e:
@@ -96,36 +112,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id].append({"role": "user", "parts": [{"text": update.message.text}]})
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
-        response = client.models.generate_content(model=MODEL_ID, contents=user_sessions[user_id])
+        response = client.models.generate_content(
+            model=MODEL_ID, 
+            contents=user_sessions[user_id],
+            config=types.GenerateContentConfig(safety_settings=safety_settings)
+        )
         user_sessions[user_id].append({"role": "model", "parts": [{"text": response.text}]})
         if len(user_sessions[user_id]) > 10: user_sessions[user_id] = user_sessions[user_id][-10:]
         await update.message.reply_text(response.text, parse_mode=constants.ParseMode.MARKDOWN)
     except Exception as e:
-        await update.message.reply_text(f"😵 錯誤：{str(e)[:50]}")
+        await update.message.reply_text(f"😵 錯誤：{str(e)}")
 
 # ==========================================
 # 4. 啟動區
 # ==========================================
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is alive!")
-
-def start_health_check_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    print(f"🚀 Health check server listening on port {port}")
-    server.serve_forever()
-
 if __name__ == '__main__':
-    # 啟動一個簡單的 Web Server 來騙過 Render 的健康檢查
-    # 因為 Render Web Service 免費版必須要偵測到有 Port 在 Listen 才會判定部署成功
-    threading.Thread(target=start_health_check_server, daemon=True).start()
-
     app = ApplicationBuilder().token(TG_TOKEN).build()
     
     # 註冊選單對應的指令
